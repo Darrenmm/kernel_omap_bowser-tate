@@ -1898,8 +1898,6 @@ int usb_gadget_probe_driver(struct usb_gadget_driver *driver,
 		goto err0;
 	}
 
-	pm_runtime_get_sync(musb->controller);
-
 	dev_dbg(musb->controller, "registering driver %s\n", driver->function);
 
 	if (musb->gadget_driver) {
@@ -1909,6 +1907,8 @@ int usb_gadget_probe_driver(struct usb_gadget_driver *driver,
 		retval = -EBUSY;
 		goto err0;
 	}
+
+	pm_runtime_get_sync(musb->controller);
 
 	spin_lock_irqsave(&musb->lock, flags);
 	musb->gadget_driver = driver;
@@ -1963,6 +1963,7 @@ err2:
 		musb_stop(musb);
 
 err1:
+	pm_runtime_put(musb->controller);
 	musb->gadget_driver = NULL;
 	musb->g.dev.driver = NULL;
 
