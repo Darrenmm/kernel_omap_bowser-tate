@@ -55,4 +55,7 @@ struct logger_entry {
 #define LOGGER_GET_NEXT_ENTRY_LEN	_IO(__LOGGERIO, 3) /* next entry len */
 #define LOGGER_FLUSH_LOG		_IO(__LOGGERIO, 4) /* flush log */
 
+extern void alog_main(unsigned char level, char *tag, char *log_msg);
+extern ssize_t __alog_main(char *buf, unsigned int buflen);
+
 #endif /* _LINUX_LOGGER_H */
