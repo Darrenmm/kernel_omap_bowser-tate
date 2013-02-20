@@ -46,8 +46,10 @@
 
 #include "../clockdomain.h"
 #include "dss.h"
+#include "gammatable.h"
 #include "dss_features.h"
 #include "dispc.h"
+#include <linux/trapz.h>
 
 /* DISPC */
 #define DISPC_SZ_REGS			SZ_4K
@@ -185,6 +187,7 @@ static void dispc_save_context(void)
 	SR(DIVISORo(OMAP_DSS_CHANNEL_LCD));
 	if (dss_has_feature(FEAT_GLOBAL_ALPHA))
 		SR(GLOBAL_ALPHA);
+	SR(GLOBAL_BUFFER);
 	SR(SIZE_MGR(OMAP_DSS_CHANNEL_DIGIT));
 	SR(SIZE_MGR(OMAP_DSS_CHANNEL_LCD));
 	if (dss_has_feature(FEAT_MGR_LCD2)) {
@@ -330,6 +333,7 @@ static void dispc_restore_context(void)
 	RR(DIVISORo(OMAP_DSS_CHANNEL_LCD));
 	if (dss_has_feature(FEAT_GLOBAL_ALPHA))
 		RR(GLOBAL_ALPHA);
+	RR(GLOBAL_BUFFER);
 	RR(SIZE_MGR(OMAP_DSS_CHANNEL_DIGIT));
 	RR(SIZE_MGR(OMAP_DSS_CHANNEL_LCD));
 	if (dss_has_feature(FEAT_MGR_LCD2)) {
@@ -466,6 +470,7 @@ static u32 dispc_calculate_threshold(enum omap_plane plane, u32 paddr,
 	u32 val, burstsize, doublestride;
 	u32 rotation, bursttype, color_mode;
 	struct dispc_config dispc_reg_config;
+	u32 dispc_buffer_sizes;
 
 	if (width >= 1920)
 		return 1500;
@@ -503,16 +508,17 @@ static u32 dispc_calculate_threshold(enum omap_plane plane, u32 paddr,
 	dispc_reg_config.rotation = rotation;
 
 	/* DMA buffer allications - assuming reset values */
-	dispc_reg_config.gfx_top_buffer = 0;
-	dispc_reg_config.gfx_bottom_buffer = 0;
-	dispc_reg_config.vid1_top_buffer = 1;
-	dispc_reg_config.vid1_bottom_buffer = 1;
-	dispc_reg_config.vid2_top_buffer = 2;
-	dispc_reg_config.vid2_bottom_buffer = 2;
-	dispc_reg_config.vid3_top_buffer = 3;
-	dispc_reg_config.vid3_bottom_buffer = 3;
-	dispc_reg_config.wb_top_buffer = 4;
-	dispc_reg_config.wb_bottom_buffer = 4;
+	dispc_buffer_sizes = dispc_read_reg(DISPC_GLOBAL_BUFFER);
+	dispc_reg_config.gfx_top_buffer = (dispc_buffer_sizes >> 0) & 7 ;
+	dispc_reg_config.gfx_bottom_buffer = (dispc_buffer_sizes >> 3) & 7;
+	dispc_reg_config.vid1_top_buffer = (dispc_buffer_sizes >> 6) & 7;
+	dispc_reg_config.vid1_bottom_buffer = (dispc_buffer_sizes >> 9) & 7;
+	dispc_reg_config.vid2_top_buffer = (dispc_buffer_sizes >> 12) & 7;
+	dispc_reg_config.vid2_bottom_buffer = (dispc_buffer_sizes >> 15) & 7;
+	dispc_reg_config.vid3_top_buffer = (dispc_buffer_sizes >> 18) & 7;
+	dispc_reg_config.vid3_bottom_buffer = (dispc_buffer_sizes >> 21) & 7;
+	dispc_reg_config.wb_top_buffer = (dispc_buffer_sizes >> 24) & 7;
+	dispc_reg_config.wb_bottom_buffer = (dispc_buffer_sizes >> 27) & 7;
 
 	/* antiFlicker is off */
 	dispc_reg_config.antiflicker = 0;
@@ -1212,18 +1218,50 @@ void dispc_set_burst_size(enum omap_plane plane,
 	dispc_write_reg(DISPC_OVL_ATTRIBUTES(plane), val);
 }
 
-void dispc_enable_gamma_table(bool enable)
+void dispc_load_gamma_table(enum omap_channel channel, bool enable, u8 gamma)
 {
-	/*
-	 * This is partially implemented to support only disabling of
-	 * the gamma table.
-	 */
-	if (enable) {
-		DSSWARN("Gamma table enabling for TV not yet supported");
-		return;
-	}
+	u16 reg;
+	u32 temp;
+	u32 i;
+	const u8 *tablePtr;
 
-	REG_FLD_MOD(DISPC_CONFIG, enable, 9, 9);
+	if (channel == OMAP_DSS_CHANNEL_LCD)
+		reg = DISPC_GAMMA_TABLE0;
+	else if (channel == OMAP_DSS_CHANNEL_LCD2)
+		reg = DISPC_GAMMA_TABLE1;
+	else
+		return;
+
+	if (enable) {
+		tablePtr = gamma_table[gamma];
+		for (i = 0; i < GAMMA_TBL_SZ; i++) {
+			temp = tablePtr[i];
+			temp = (i << 24) | (temp << 16) | (temp << 8) | temp;
+			dispc_write_reg(reg, temp);
+		}
+	}
+}
+
+void dispc_load_gamma_tv_table(bool enable, u8 gamma)
+{
+	u32 temp;
+	u32 i;
+	const u16 *tablePtr;
+
+	if (enable) {
+		tablePtr = gamma_tv_table[gamma];
+		for (i = 0; i < GAMMA_TV_TBL_SZ; i++) {
+			temp = 0x0;
+			/* Reset internal index counter */
+			if (i == 0)
+				temp = 0x80000000;
+			temp |= ((*tablePtr & 0x3FF) << 20) |
+				((*tablePtr & 0x3FF) << 10) |
+				(*tablePtr & 0x3FF);
+			dispc_write_reg(DISPC_GAMMA_TABLE2, temp);
+			tablePtr++;
+		}
+	}
 }
 
 void dispc_set_zorder(enum omap_plane plane,
@@ -2244,6 +2282,9 @@ int dispc_setup_plane(enum omap_plane plane,
 	unsigned long tiler_width, tiler_height;
 	u32 fifo_high, fifo_low;
 
+	TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DispcSetupPlane, "DSS Setup Plane.  This is where the hardware registers are programmed for a layer.  There may be multiple calls - 1 for each layer");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_VERBOSE, TRAPZ_CAT_KERNEL, TRAPZ_KERN_DISP_DSS, DispcSetupPlane, "plane %d paddr %d", plane, paddr);
+
 	DSSDBG("dispc_setup_plane %d, pa %x, sw %d, %d,%d, %d/%dx%d/%d -> "
 	       "%dx%d, ilace %d, cmode %x, rot %d, mir %d chan %d %dtap\n",
 	       plane, paddr, screen_width, pos_x, pos_y,
@@ -2507,7 +2548,7 @@ static void dispc_enable_lcd_out(enum omap_channel channel, bool enable)
 					msecs_to_jiffies(100)))
 			DSSERR("timeout waiting for FRAME DONE\n");
 
-		r = omap_dispc_unregister_isr(dispc_disable_isr,
+		r = omap_dispc_unregister_isr_sync(dispc_disable_isr,
 				&frame_done_completion, irq);
 
 		if (r)
@@ -2566,7 +2607,7 @@ static void dispc_enable_digit_out(enum omap_display_type type, bool enable)
 			DSSERR("timeout waiting for EVSYNC\n");
 	}
 
-	r = omap_dispc_unregister_isr(dispc_disable_isr,
+	r = omap_dispc_unregister_isr_sync(dispc_disable_isr,
 			&frame_done_completion,
 			DISPC_IRQ_EVSYNC_EVEN | DISPC_IRQ_EVSYNC_ODD
 						| DISPC_IRQ_FRAMEDONETV);
@@ -2782,6 +2823,59 @@ bool dispc_trans_key_enabled(enum omap_channel ch)
 	return enabled;
 }
 
+/* valid inputs for gamma are from 1 to 10 that map
+  from 0.2 to 2.0 gamma values and 0 for disabled */
+int dispc_enable_gamma(enum omap_channel channel, u8 gamma)
+{
+#ifdef CONFIG_ARCH_OMAP4
+	bool enable;
+	static u8 loaded_gamma[MAX_DSS_MANAGERS];
+
+	if ((channel != OMAP_DSS_CHANNEL_DIGIT && gamma > NO_OF_GAMMA_TABLES) ||
+	(channel == OMAP_DSS_CHANNEL_DIGIT && gamma > NO_OF_GAMMA_TV_TABLES) ||
+	gamma < 0)
+		return -EINVAL;
+
+	enable = !!gamma;
+
+	switch (channel) {
+	case OMAP_DSS_CHANNEL_LCD:
+		DSSINFO("%s gamma correction for LCD\n", enable ? "Enable" :
+								"Disable");
+		if (gamma != loaded_gamma[OMAP_DSS_CHANNEL_LCD]) {
+			dispc_load_gamma_table(channel, enable, gamma - 1);
+			loaded_gamma[OMAP_DSS_CHANNEL_LCD] = gamma;
+		}
+		/* PALETTEGAMMATABLE */
+		REG_FLD_MOD(DISPC_CONFIG, enable ? 1 : 0, 3, 3);
+		break;
+	case OMAP_DSS_CHANNEL_LCD2:
+		DSSINFO("%s gamma correction for LCD2\n", enable ? "Enable" :
+								"Disable");
+		/* GAMATABLEENABLE */
+		REG_FLD_MOD(DISPC_CONFIG, enable ? 1 : 0, 9, 9);
+		if (gamma != loaded_gamma[OMAP_DSS_CHANNEL_LCD2]) {
+			dispc_load_gamma_table(channel, enable, gamma - 1);
+			loaded_gamma[OMAP_DSS_CHANNEL_LCD2] = gamma;
+		}
+		break;
+	case OMAP_DSS_CHANNEL_DIGIT:
+		DSSINFO("%s gamma correction for TV\n", enable ? "Enable" :
+								"Disable");
+		/* GAMATABLEENABLE */
+		REG_FLD_MOD(DISPC_CONFIG, enable ? 1 : 0, 9, 9);
+		if (gamma != loaded_gamma[OMAP_DSS_CHANNEL_DIGIT]) {
+			dispc_load_gamma_tv_table(enable, gamma - 1);
+			loaded_gamma[OMAP_DSS_CHANNEL_DIGIT] = gamma;
+		}
+		break;
+	default:
+		return -EINVAL;
+	}
+#endif
+	return 0;
+}
+
 
 void dispc_set_tft_data_lines(enum omap_channel channel, u8 data_lines)
 {
@@ -2944,8 +3038,13 @@ void dispc_set_lcd_timings(enum omap_channel channel,
 static void dispc_set_lcd_divisor(enum omap_channel channel, u16 lck_div,
 		u16 pck_div)
 {
+#if defined (CONFIG_PANEL_SAMSUNG_LTL089CL01) || (CONFIG_PANEL_NT71391_HYDIS)
+//	BUG_ON(lck_div < 1);
+//	BUG_ON(pck_div < 2);
+#else
 	BUG_ON(lck_div < 1);
 	BUG_ON(pck_div < 2);
+#endif
 
 	dispc_write_reg(DISPC_DIVISORo(channel),
 			FLD_VAL(lck_div, 23, 16) | FLD_VAL(pck_div, 7, 0));
@@ -3371,8 +3470,14 @@ int dispc_calc_clock_rates(unsigned long dispc_fclk_rate,
 {
 	if (cinfo->lck_div > 255 || cinfo->lck_div == 0)
 		return -EINVAL;
+
+#if defined (CONFIG_PANEL_SAMSUNG_LTL089CL01) || (CONFIG_PANEL_NT71391_HYDIS)
+//	if (cinfo->pck_div < 2 || cinfo->pck_div > 255)
+//		return -EINVAL;
+#else
 	if (cinfo->pck_div < 2 || cinfo->pck_div > 255)
 		return -EINVAL;
+#endif
 
 	cinfo->lck = dispc_fclk_rate / cinfo->lck_div;
 	cinfo->pck = cinfo->lck / cinfo->pck_div;
@@ -3404,6 +3509,18 @@ int dispc_get_clock_div(enum omap_channel channel,
 	cinfo->lck = fck / cinfo->lck_div;
 	cinfo->pck = cinfo->lck / cinfo->pck_div;
 
+	return 0;
+}
+
+int dispc_move_wb_buffers(bool buffer_state)
+{
+	if (buffer_state) {
+		REG_FLD_MOD(DISPC_GLOBAL_BUFFER, 0x4, 26, 24);
+		dispc.fifo_size[OMAP_DSS_GFX] = 0x500;
+	} else {
+		REG_FLD_MOD(DISPC_GLOBAL_BUFFER, 0x0, 26, 24);
+		dispc.fifo_size[OMAP_DSS_GFX] = 0x900;
+	}
 	return 0;
 }
 
@@ -3487,7 +3604,8 @@ err:
 }
 EXPORT_SYMBOL(omap_dispc_register_isr);
 
-int omap_dispc_unregister_isr(omap_dispc_isr_t isr, void *arg, u32 mask)
+/* WARNING: callback might be executed even after this function returns! */
+int omap_dispc_unregister_isr_nosync(omap_dispc_isr_t isr, void *arg, u32 mask)
 {
 	int i;
 	unsigned long flags;
@@ -3519,7 +3637,40 @@ int omap_dispc_unregister_isr(omap_dispc_isr_t isr, void *arg, u32 mask)
 
 	return ret;
 }
-EXPORT_SYMBOL(omap_dispc_unregister_isr);
+EXPORT_SYMBOL(omap_dispc_unregister_isr_nosync);
+
+/*
+ * Ensure that callback <isr> will NOT be executed after this function
+ * returns. Must be called from sleepable context, though!
+ */
+int omap_dispc_unregister_isr_sync(omap_dispc_isr_t isr, void *arg, u32 mask)
+{
+	int ret;
+
+	ret = omap_dispc_unregister_isr_nosync(isr, arg, mask);
+
+	/* Non-atomic context is not really needed. But if we're called
+	 * from atomic context, it is probably from DISPC IRQ, where we
+	 * will deadlock.
+	 */
+	might_sleep();
+
+#if defined(CONFIG_SMP)
+	/* DISPC IRQ executes callbacks with dispc.irq_lock released, so
+	 * there is a chance that a callback be executed even though it
+	 * has been unregistered. Do disable/enable to act as a barrier, and
+	 * ensure that after returning from this function, the DISPC IRQ
+	 * will use an updated callback array, and NOT its cached copy.
+	 *
+	 * This is SMP-only issue because unregister_isr_nosync disables
+	 * IRQs.
+	 */
+	disable_irq(dispc.irq);
+	enable_irq(dispc.irq);
+#endif
+
+	return ret;
+}
 
 #ifdef DEBUG
 static void print_irq_status(u32 status)
@@ -3881,7 +4032,7 @@ int omap_dispc_wait_for_irq_timeout(u32 irqmask, unsigned long timeout)
 
 	timeout = wait_for_completion_timeout(&completion, timeout);
 
-	omap_dispc_unregister_isr(dispc_irq_wait_handler, &completion, irqmask);
+	omap_dispc_unregister_isr_sync(dispc_irq_wait_handler, &completion, irqmask);
 
 	if (timeout == 0)
 		return -ETIMEDOUT;
@@ -3916,7 +4067,7 @@ int omap_dispc_wait_for_irq_interruptible_timeout(u32 irqmask,
 	timeout = wait_for_completion_interruptible_timeout(&completion,
 			timeout);
 
-	omap_dispc_unregister_isr(dispc_irq_wait_handler, &completion, irqmask);
+	omap_dispc_unregister_isr_sync(dispc_irq_wait_handler, &completion, irqmask);
 
 	if (timeout == 0)
 		r = -ETIMEDOUT;
@@ -3985,8 +4136,12 @@ void dispc_disable_sidle(void)
 static void _omap_dispc_initial_config(void)
 {
 	u32 l;
+	struct device *dev = &dispc.pdev->dev;
+	struct omap_display_platform_data *pdata = dev->platform_data;
+	struct omap_dss_board_info *board_data = pdata->board_data;
 
 	/* Exclusively enable DISPC_CORE_CLK and set divider to 1 */
+#ifndef CONFIG_FB_OMAP_BOOTLOADER_INIT
 	if (dss_has_feature(FEAT_CORE_CLK_DIV)) {
 		l = dispc_read_reg(DISPC_DIVISOR);
 		/* Use DISPC_DIVISOR.LCD, instead of DISPC_DIVISOR1.LCD */
@@ -3994,24 +4149,34 @@ static void _omap_dispc_initial_config(void)
 		l = FLD_MOD(l, 1, 23, 16);
 		dispc_write_reg(DISPC_DIVISOR, l);
 	}
+#endif
 
 	l3_1_clkdm = clkdm_lookup("l3_1_clkdm");
 	l3_2_clkdm = clkdm_lookup("l3_2_clkdm");
 
 	/* FUNCGATED */
+#ifndef CONFIG_FB_OMAP_BOOTLOADER_INIT
 	if (dss_has_feature(FEAT_FUNCGATED))
 		REG_FLD_MOD(DISPC_CONFIG, 1, 9, 9);
 
 	REG_FLD_MOD(DISPC_CONFIG, 1, 17, 17);
+#endif
 
 	/* L3 firewall setting: enable access to OCM RAM */
 	/* XXX this should be somewhere in plat-omap */
 	if (cpu_is_omap24xx())
 		__raw_writel(0x402000b0, OMAP2_L3_IO_ADDRESS(0x680050a0));
 
+#ifndef CONFIG_FB_OMAP_BOOTLOADER_INIT
 	dispc_set_loadmode(OMAP_DSS_LOAD_FRAME_ONLY);
+#endif
 
 	dispc_read_plane_fifo_sizes();
+
+#ifndef CONFIG_FB_OMAP_BOOTLOADER_INIT
+	if (board_data->move_wb_buffers)
+		dispc_move_wb_buffers(false);
+#endif
 }
 
 /* DISPC HW IP initialisation */
