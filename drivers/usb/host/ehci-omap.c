@@ -63,6 +63,7 @@
 /*-------------------------------------------------------------------------*/
 
 static struct hc_driver ehci_omap_hc_driver;
+static struct clk *ehci_phy_ref_clk=NULL;
 
 
 static inline void ehci_write(void __iomem *base, u32 reg, u32 val)
@@ -85,7 +86,7 @@ u8 omap_ehci_ulpi_read(const struct usb_hcd *hcd, u8 reg)
 			/* Write */
 			| (3 << EHCI_INSNREG05_ULPI_OPSEL_SHIFT)
 			/* PORTn */
-			| ((1) << EHCI_INSNREG05_ULPI_PORTSEL_SHIFT)
+			| ((2) << EHCI_INSNREG05_ULPI_PORTSEL_SHIFT)
 			/* start ULPI access*/
 			| (1 << EHCI_INSNREG05_ULPI_CONTROL_SHIFT);
 
@@ -118,7 +119,7 @@ again:
 			/* Write */
 			| (2 << EHCI_INSNREG05_ULPI_OPSEL_SHIFT)
 			/* PORTn */
-			| ((1) << EHCI_INSNREG05_ULPI_PORTSEL_SHIFT)
+			| ((2) << EHCI_INSNREG05_ULPI_PORTSEL_SHIFT)
 			/* start ULPI access*/
 			| (1 << EHCI_INSNREG05_ULPI_CONTROL_SHIFT);
 
@@ -474,6 +475,12 @@ static int ehci_hcd_omap_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
+	ehci_phy_ref_clk = clk_get(NULL, "auxclk3_ck");
+	if (IS_ERR(ehci_phy_ref_clk)) {
+		pr_err("Cannot request ehci auxclk3\n");
+		return -ENODEV;
+	}
+
 	regs = ioremap(res->start, resource_size(res));
 	if (!regs) {
 		dev_err(dev, "UHH EHCI ioremap failed\n");
@@ -558,6 +565,13 @@ static int ehci_hcd_omap_probe(struct platform_device *pdev)
 	/* root ports should always stay powered */
 	ehci_port_power(omap_ehci, 1);
 
+
+	/*Set UseExternalVbusindicator to "1" */
+	omap_ehci_ulpi_write(hcd, 0x80, 0x0B, 20);
+
+	/*Set Indicatorpasstrou to "1" */
+	omap_ehci_ulpi_write(hcd, 0x40, 0x08, 20);
+
 	return 0;
 
 err_add_hcd:
@@ -632,6 +646,11 @@ static int ehci_omap_bus_suspend(struct usb_hcd *hcd)
 			clk_disable(clk);
 	}
 
+	if(ehci_phy_ref_clk) {
+		dev_dbg(dev,"ehci_omap_bus_suspend- Aux clk_disable\n");
+		clk_disable(ehci_phy_ref_clk);
+	}
+
 	omap_pm_set_min_bus_tput(dev,
 			OCP_INITIATOR_AGENT,
 			-1);
@@ -654,6 +673,11 @@ static int ehci_omap_bus_resume(struct usb_hcd *hcd)
 		clk = pdata->transceiver_clk[i];
 		if (clk)
 			clk_enable(clk);
+	}
+
+	if(ehci_phy_ref_clk) {
+		dev_dbg(dev,"ehci_omap_bus_resume-Aux clk_enable\n");
+		clk_enable(ehci_phy_ref_clk);
 	}
 
 	omap_pm_set_min_bus_tput(dev,
