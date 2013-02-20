@@ -1507,6 +1507,41 @@ static void __init setup_lowpower_regs(u32 emif_nr,
 		__raw_writel(temp, base + OMAP44XX_EMIF_PWR_MGMT_CTRL);
 	}
 }
+/*
+ * omap_sdram_vendor - identify ddr vendor
+ * Identify DDR vendor ID for selecting correct timing parameter 
+ * for dynamic ddr detection.
+ */
+int omap_sdram_vendor(void)
+{
+	int ddr_manufact_id =0; 	
+	void __iomem *base;
+
+	base = emif[EMIF1].base;
+
+	__raw_writel(LPDDR2_MR5, base + OMAP44XX_EMIF_LPDDR2_MODE_REG_CFG);
+	ddr_manufact_id =  __raw_readb(base  +  OMAP44XX_EMIF_LPDDR2_MODE_REG_DATA);
+
+	return ddr_manufact_id ;
+}
+/*
+ * omap_sdram_density - identify ddr density
+ * Identify DDR density for selecting correct timing parameter
+ * for dynamic ddr detection.
+ */
+int omap_sdram_density(void)
+{
+	int ddr_density =0;
+	void __iomem *base;
+
+	base = emif[EMIF1].base;
+
+	__raw_writel(LPDDR2_MR8, base + OMAP44XX_EMIF_LPDDR2_MODE_REG_CFG);
+	ddr_density =  __raw_readb(base  +  OMAP44XX_EMIF_LPDDR2_MODE_REG_DATA);
+
+	return ddr_density;
+}
+
 
 /*
  * omap_init_emif_timings - reprogram EMIF timing parameters
