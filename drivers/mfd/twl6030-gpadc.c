@@ -125,7 +125,7 @@ static const u8 twl6030_trim_addr[GPADC_MAX_CHANNELS] = {
  * is used, as scaler is Vref * divider
  * Vref = 1.25
  */
-static const u16 twl6030_gain[TWL6030_GPADC_MAX_CHANNELS] = {
+static const u16 twl6030_gain[GPADC_MAX_CHANNELS] = {
 	10,	/* CHANNEL 0 */
 	10,	/* CHANNEL 1 */
 
