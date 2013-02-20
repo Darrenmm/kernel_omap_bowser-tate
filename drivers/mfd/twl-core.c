@@ -1335,6 +1335,10 @@ int twl6030_exit_irq(void);
 #ifdef CONFIG_PM
 static int twl_suspend(struct i2c_client *client, pm_message_t mesg)
 {
+#if defined(CONFIG_LAB126)
+	/* Un-mask low battery interrupt */
+	twl6030_interrupt_unmask(VLOW_INT_MASK, REG_INT_MSK_STS_A);
+#endif
 	return irq_set_irq_wake(client->irq, 1);
 }
 
