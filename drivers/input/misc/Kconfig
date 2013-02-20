@@ -580,4 +580,10 @@ config INPUT_PIC12LF1822_PROXIMITY
         Say Y here if you want to use proximity sensor pic12lf1822_proximity.
         through I2C interface.
 
+config INPUT_BU52061_HALLSENSOR
+	bool "Rohm BU52061NVX hall sensor"
+	depends on I2C
+	help
+	  Say Y here if you want to use hall sensor Rohm BU52061NVX. 
+
 endif
