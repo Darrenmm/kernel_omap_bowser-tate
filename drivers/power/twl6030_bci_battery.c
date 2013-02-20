@@ -566,28 +566,31 @@ static int is_battery_present(struct twl6030_bci_device_info *di)
 	 */
 	val = twl6030_get_gpadc_conversion(di, 0);
 
-	/*
-	 * twl6030_get_gpadc_conversion for
-	 * 6030 return resistance, for 6032 - voltage and
-	 * it should be converted to resistance before
-	 * using.
-	 */
-	if (!current_src_val) {
-		u8 reg = 0;
+	if (di->features & TWL6032_SUBCLASS) {
+		/*
+		 * twl6030_get_gpadc_conversion for
+		 * 6030 return resistance, for 6032 - voltage and
+		 * it should be converted to resistance before
+		 * using.
+		 */
+		if (!current_src_val) {
+			u8 reg = 0;
 
-		if (twl_i2c_read_u8(TWL_MODULE_MADC, &reg,
-					TWL6030_GPADC_CTRL))
-			pr_err("%s: Error reading TWL6030_GPADC_CTRL\n",
-				__func__);
+			if (twl_i2c_read_u8(TWL_MODULE_MADC, &reg,
+						TWL6030_GPADC_CTRL))
+				pr_err("%s: Error reading TWL6030_GPADC_CTRL\n",
+					__func__);
 
-		current_src_val = (reg & GPADC_CTRL_ISOURCE_EN) ?
-					GPADC_ISOURCE_22uA :
-					GPADC_ISOURCE_7uA;
+			current_src_val = (reg & GPADC_CTRL_ISOURCE_EN) ?
+						GPADC_ISOURCE_22uA :
+						GPADC_ISOURCE_7uA;
+		}
+
+		val = (val * 1000) / current_src_val;
 	}
 
-	val = (val * 1000) / current_src_val;
-
-	if (val < BATTERY_DETECT_THRESHOLD)
+//	if (val < BATTERY_DETECT_THRESHOLD)
+	if (val < 5000)
 		return 0;
 
 	return 1;
@@ -1293,8 +1296,9 @@ static int capacity_changed(struct twl6030_bci_device_info *di)
 
 	/* Setting the capacity level only makes sense when on
 	 * the battery is powering the board.
+     * [AMAZON] removed check again
 	 */
-	if (di->charge_status == POWER_SUPPLY_STATUS_DISCHARGING) {
+//	if (di->charge_status == POWER_SUPPLY_STATUS_DISCHARGING) {
 		if (di->voltage_mV < 3500)
 			curr_capacity = 5;
 		else if (di->voltage_mV < 3600 && di->voltage_mV >= 3500)
@@ -1307,7 +1311,7 @@ static int capacity_changed(struct twl6030_bci_device_info *di)
 			curr_capacity = 90;
 		else if (di->voltage_mV >= 3900)
 				curr_capacity = 100;
-	}
+//	}
 
 	/* if we disabled charging to check capacity,
 	 * enable it again after we read the
