@@ -38,6 +38,7 @@ obj-$(CONFIG_TWL4030_CORE) += omap_twl.o
 obj-$(CONFIG_OMAP_TPS6236X) += omap_tps6236x.o
 obj-$(CONFIG_OMAP_TEMP_SENSOR) +=temp_sensor_device.o
 obj-$(CONFIG_OMAP4_PCB_SENSOR) += pcb_temp_sensor_device.o
+obj-$(CONFIG_CASE_TEMP_SENSOR) += case_temp_sensor_device.o
 
 # SMP support ONLY available for OMAP4
 obj-$(CONFIG_SMP)			+= omap-smp.o omap-headsmp.o
@@ -81,9 +82,6 @@ obj-$(CONFIG_OMAP_SMARTREFLEX)          += sr_device.o smartreflex.o
 obj-$(CONFIG_OMAP_SMARTREFLEX_CLASS3)	+= smartreflex-class3.o
 obj-$(CONFIG_OMAP_SMARTREFLEX_CLASS1P5)	+= smartreflex-class1p5.o
 
-# CPUFREQ driver
-obj-$(CONFIG_CPU_FREQ)			+= omap2plus-cpufreq.o
-
 # Power Management
 ifeq ($(CONFIG_PM),y)
 obj-$(CONFIG_ARCH_OMAP2)		+= pm24xx.o
@@ -107,6 +105,9 @@ CFLAGS_pm_bus.o				+= -DDEBUG
 endif
 
 endif
+
+# CPUFREQ driver
+obj-$(CONFIG_CPU_FREQ)			+= omap2plus-cpufreq.o
 
 # PRCM
 obj-$(CONFIG_ARCH_OMAP2)		+= prcm.o cm2xxx_3xxx.o prm2xxx_3xxx.o

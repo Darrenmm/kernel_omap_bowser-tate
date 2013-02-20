@@ -23,6 +23,7 @@
 #include <linux/suspend.h>
 #include <linux/thermal_framework.h>
 #include <plat/tmp102_temp_sensor.h>
+#include <plat/tmp103_temp_sensor.h>
 #include <plat/cpu.h>
 
 /* CPU Zone information */
@@ -71,7 +72,9 @@ struct omap_die_governor {
 	int absolute_delta;
 	int average_period;
 	int avg_cpu_sensor_temp;
+	int hotspot_temp;
 	int avg_is_valid;
+	int zone_info;
 	struct delayed_work average_cpu_sensor_work;
 	struct delayed_work decrease_mpu_freq_work;
 	int gradient_slope;
@@ -113,6 +116,7 @@ static struct omap_thermal_zone omap_thermal_zones[] = {
 			OMAP_PANIC_TEMP - HYSTERESIS_VALUE, OMAP_FATAL_TEMP,
 			FAST_TEMP_MONITORING_RATE, FAST_TEMP_MONITORING_RATE),
 };
+
 static struct thermal_dev *therm_fw;
 static struct omap_die_governor *omap_gov;
 static int cpu_sensor_temp_table[AVERAGE_NUMBER];
@@ -220,6 +224,7 @@ static signed int convert_omap_sensor_temp_to_hotspot_temp(int sensor_temp)
 	}
 
 	omap_gov->absolute_delta = absolute_delta;
+	omap_gov->hotspot_temp = sensor_temp + absolute_delta;
 	pr_debug("%s:sensor %d avg sensor %d pcb %d, delta %d hot spot %d\n",
 			__func__, sensor_temp, omap_gov->avg_cpu_sensor_temp,
 			omap_gov->pcb_temp, omap_gov->absolute_delta,
@@ -294,9 +299,10 @@ static int omap_enter_zone(struct omap_thermal_zone *zone,
  */
 static void omap_fatal_zone(int cpu_temp)
 {
+	omap_gov->zone_info = FATAL_ZONE;
 	pr_emerg("%s:FATAL ZONE (hot spot temp: %i)\n", __func__, cpu_temp);
 
-	kernel_restart(NULL);
+	orderly_poweroff(true);
 }
 
 static void start_panic_guard(void)
@@ -369,7 +375,7 @@ static int omap_cpu_thermal_manager(struct list_head *cooling_list, int temp)
 			start_panic_guard();
 		else
 			cancel_delayed_work(&omap_gov->decrease_mpu_freq_work);
-
+		
 		if ((omap_gov->prev_zone != zone) || (zone == PANIC_ZONE)) {
 			pr_info("%s:sensor %d avg sensor %d pcb ",
 				 __func__, temp,
@@ -384,6 +390,8 @@ static int omap_cpu_thermal_manager(struct list_head *cooling_list, int temp)
 		omap_enter_zone(therm_zone, set_cooling_level,
 				cooling_list, cpu_temp);
 	}
+
+	omap_gov->zone_info = zone;
 
 	return zone;
 }
@@ -411,6 +419,7 @@ static void average_on_die_temperature(void)
 	int i;
 	int die_temp_lower = 0;
 	int die_temp_upper = 0;
+	int acc_temp;
 
 	if (omap_gov->temp_sensor == NULL)
 		return;
@@ -435,12 +444,12 @@ static void average_on_die_temperature(void)
 		omap_gov->avg_is_valid = 1;
 
 	/* Compute the new average value */
-	omap_gov->avg_cpu_sensor_temp = 0;
+	acc_temp = 0;
 	for (i = 0; i < AVERAGE_NUMBER; i++)
-		omap_gov->avg_cpu_sensor_temp += cpu_sensor_temp_table[i];
+		acc_temp += cpu_sensor_temp_table[i];
 
 	omap_gov->avg_cpu_sensor_temp =
-		(omap_gov->avg_cpu_sensor_temp / AVERAGE_NUMBER);
+		(acc_temp / AVERAGE_NUMBER);
 
 	/*
 	 * Reconfigure the current temperature thresholds according
@@ -479,13 +488,28 @@ static int omap_process_cpu_temp(struct thermal_dev *gov,
 	return omap_cpu_thermal_manager(cooling_list, temp);
 }
 
+static int omap_process_hotspot_temp(struct thermal_dev *temp_sensor)
+{
+	return omap_gov->hotspot_temp;
+}
+
+static int omap_process_avg_temp(struct thermal_dev *temp_sensor)
+{
+	return omap_gov->avg_cpu_sensor_temp;
+}
+
+static int omap_process_zone(struct thermal_dev *temp_sensor)
+{
+	return omap_gov->zone_info;
+}
+
 static int omap_die_pm_notifier_cb(struct notifier_block *notifier,
 				unsigned long pm_event,  void *unused)
 {
 	switch (pm_event) {
 	case PM_SUSPEND_PREPARE:
 		cancel_delayed_work_sync(&omap_gov->average_cpu_sensor_work);
-		cancel_delayed_work(&omap_gov->decrease_mpu_freq_work);
+		cancel_delayed_work_sync(&omap_gov->decrease_mpu_freq_work);
 		break;
 	case PM_POST_SUSPEND:
 		schedule_work(&omap_gov->average_cpu_sensor_work.work);
@@ -497,6 +521,9 @@ static int omap_die_pm_notifier_cb(struct notifier_block *notifier,
 
 static struct thermal_dev_ops omap_gov_ops = {
 	.process_temp = omap_process_cpu_temp,
+	.process_hotspot_temp = omap_process_hotspot_temp,
+	.process_avg_temp = omap_process_avg_temp,
+	.process_zone = omap_process_zone,
 };
 
 static struct notifier_block omap_die_pm_notifier = {
@@ -558,7 +585,6 @@ static int __init omap_die_governor_init(void)
 
 	schedule_delayed_work(&omap_gov->average_cpu_sensor_work,
 			msecs_to_jiffies(0));
-
 	return 0;
 }
 
