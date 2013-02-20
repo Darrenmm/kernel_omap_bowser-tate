@@ -28,6 +28,7 @@
 #include "smartreflex.h"
 #include "powerdomain.h"
 #include "pm.h"
+#include <linux/trapz.h>
 
 /**
  * DOC: Introduction
@@ -863,6 +864,11 @@ static int _dvfs_scale(struct device *req_dev, struct device *target_dev,
 			dev_dbg(dev, "%s: Already at the requested"
 				"rate %ld\n", __func__, freq);
 			continue;
+		}
+
+		if (!strcmp(temp_dev->clk->name, "virt_dpll_mpu_ck")){
+			TRAPZ_DESCRIBE(TRAPZ_KERN_DVFS, DVFSChangeFreq, "Mpu Frequency Change");
+			TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DVFS, DVFSChangeFreq, "mpu freq=%d", freq, 0);
 		}
 
 		r = clk_set_rate(temp_dev->clk, freq);
