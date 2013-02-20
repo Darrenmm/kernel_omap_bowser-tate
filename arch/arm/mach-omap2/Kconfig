@@ -330,12 +330,22 @@ config MACH_OMAP_4430SDP
 	select TOUCHSCREEN_SYNTM12XX
 	select TWL6030_POWEROFF
 	select INPUT_TWL6030_PWRBUTTON
-	select TWL6040_VIB
+#	select TWL6040_VIB
 	select TWL6030_BCI_BATTERY
 	select CHARGER_BQ2415x
 	select TWL6030_GPADC
 	select OMAP_REBOOT_REASON
 	select OMAP_RAM_CONSOLE
+
+config MACH_OMAP4_BOWSER
+	bool "OMAP4 based Bowser board"
+	default y
+	depends on ARCH_OMAP4
+	select OMAP_PACKAGE_CBL
+	select OMAP_PACKAGE_CBS
+	select REGULATOR_FIXED_VOLTAGE
+	select OMAP_TPS6236X
+	select OMAP_REBOOT_REASON
 
 config MACH_OMAP_BLAZE
 	bool "OMAP 44xx Tablet2 Board"
@@ -351,9 +361,9 @@ config MACH_OMAP_BLAZE
 	select INPUT_HMC5843
 	select INPUT_MPU3050
 	select INPUT_BMA180
-	select PANEL_TC358765
+#	select PANEL_TC358765
 	select KEYBOARD_GPIO
-	select TWL6040_VIB
+#	select TWL6040_VIB
 	select OMAP_REBOOT_REASON
 	select OMAP_RAM_CONSOLE
 
@@ -367,6 +377,11 @@ config MACH_OMAP4_PANDA
 	select OMAP_TPS6236X
 	select OMAP_REBOOT_REASON
 	select OMAP_RAM_CONSOLE
+
+config MACH_OMAP4_BOWSER_SUBTYPE_TATE
+        bool "OMAP4 Bowser based Tate sub-type board"
+        select MACH_OMAP4_BOWSER
+        depends on ARCH_OMAP4
 
 config OMAP3_EMU
 	bool "OMAP3 debugging peripherals"
@@ -409,6 +424,13 @@ config OMAP_FIQ_DEBUGGER
 config OMAP_REBOOT_REASON
 	depends on ARCH_OMAP4
 	bool
+config DDR_CHIP_SELECT_1
+	bool  "Enable one chip select required for DDR"
+	depends on ARCH_OMAP4
+	default n
+	help
+	  Select this option to select one chip select for DDR.
+	  Which means that it has 1 CS, 10 COL and 14 ROWS.
 
 config OMAP_RAM_CONSOLE
         bool "Enable OMAP support for Android RAM console"

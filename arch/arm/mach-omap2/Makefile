@@ -277,6 +277,17 @@ obj-$(CONFIG_MACH_OMAP_4430SDP)		+= board-4430sdp.o \
 					   hsmmc.o \
 					   omap_phy_internal.o \
 					   omap4_apps_brd_id.o
+obj-$(CONFIG_MACH_OMAP4_BOWSER)		+= board-bowser4.o \
+					   board-bowser-bluetooth.o \
+					   board-blaze-touch.o \
+					   board-bowser-panel.o \
+					   board-blaze-keypad.o \
+					   board-blaze-sensors.o \
+					   board-44xx-identity.o \
+					   hsmmc.o \
+					   omap_phy_internal.o \
+					   omap4_apps_brd_id.o	\
+					   board-bowser-wifi.o
 obj-$(CONFIG_TOUCHSCREEN_CYPRESS_TTSP)  += board-touch-cyttsp4_core.o
 obj-$(CONFIG_MACH_OMAP_BLAZE)		+= board-44xx-tablet.o \
 					   board-44xx-identity.o \
