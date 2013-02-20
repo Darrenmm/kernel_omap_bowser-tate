@@ -44,6 +44,8 @@
 #include <plat/cpu.h>
 #endif
 
+#include <linux/proc_fs.h>
+
 /*
  * The TWL4030 "Triton 2" is one of a family of a multi-function "Power
  * Management and System Companion Device" chips originally designed for
@@ -246,6 +248,26 @@
 
 /* need to access USB_PRODUCT_ID_LSB to identify which 6030 varient we are */
 #define USB_PRODUCT_ID_LSB	0x02
+
+/* PMC Master Module */
+#define PHOENIX_START_CONDITION		0x1F
+#define START_COND_STRT_ON_PWRON 	BIT(0)
+#define START_COND_STRT_ON_RPWRON	BIT(1)
+#define START_COND_STRT_ON_USB_ID	BIT(2)
+#define START_COND_STRT_ON_PLUG_DET	BIT(3)
+#define START_COND_STRT_ON_RTC		BIT(4)
+#define START_COND_FIRST_SYS_INS	BIT(5)
+#define START_COND_RESTART_BB 		BIT(6)
+
+#define PHOENIX_STS_HW_CONDITIONS 	0x21
+#define PHOENIX_LAST_TURNOFF_STS 	0x22
+#define TURNOFF_DEVOFF_RPWRON 		BIT(6)
+#define TURNOFF_DEVOFF_SHORT 		BIT(5)
+#define TURNOFF_DEVOFF_WDT 		BIT(4)
+#define TURNOFF_DEVOFF_TSHUT 		BIT(3)
+#define TURNOFF_DEVOFF_BCK 		BIT(2)
+#define TURNOFF_DEVOFF_LPK 		BIT(1)
+
 
 /*----------------------------------------------------------------------*/
 
@@ -1227,6 +1249,83 @@ static void clocks_init(struct device *dev,
 
 /*----------------------------------------------------------------------*/
 
+/*
+ * PROC FS entries for start condition and last turnoff reason
+ */
+#define TWL_BOOT_INFO_SIZE	256
+static char twl_start_condition[TWL_BOOT_INFO_SIZE];
+static char twl_turnoff_reason[TWL_BOOT_INFO_SIZE];
+
+#define TWL_PROC_DIRNAME		"twl"
+#define TWL_STARTCOND_PROCNAME		"start-condition"
+#define TWL_LAST_TURNOFF_PROCNAME	"turnoff-reason"
+
+static struct {
+	const char *str;
+	u32 mask;
+} start_cond_flags[] = {
+	{ "battery bounce",		START_COND_RESTART_BB },
+	{ "first batt. ins.",		START_COND_FIRST_SYS_INS },
+	{ "rtc alarm",			START_COND_STRT_ON_RTC },
+	{ "USB plug",			START_COND_STRT_ON_PLUG_DET },
+	{ "USB ID event",		START_COND_STRT_ON_USB_ID },
+	{ "remote power on",		START_COND_STRT_ON_RPWRON },
+	{ "power on",			START_COND_STRT_ON_PWRON },
+}, last_turnoff_flags[] = {
+	{ "remote power on",		TURNOFF_DEVOFF_RPWRON },
+	{ "shorted power resource",	TURNOFF_DEVOFF_SHORT },
+	{ "watchdog",			TURNOFF_DEVOFF_WDT },
+	{ "thermal shutdown",		TURNOFF_DEVOFF_TSHUT },
+	{ "battery bounce",		TURNOFF_DEVOFF_BCK },
+	{ "long key press",		TURNOFF_DEVOFF_LPK },
+};
+
+static int proc_startcond_read(char *page, char **start, off_t off, int count,
+				int *eof, void *data)
+{
+	strlcpy(page, twl_start_condition, sizeof(twl_start_condition));
+	*eof = 1;
+
+	return strlen(page);
+}
+
+static int proc_turnoff_sts_read(char *page, char **start, off_t off, int count,
+				int *eof, void *data)
+{
+	strlcpy(page, twl_turnoff_reason, sizeof(twl_turnoff_reason));
+	*eof = 1;
+
+	return strlen(page);
+}
+
+static void create_twl_proc_files(void)
+{
+	struct proc_dir_entry* twl_proc_dir = NULL;
+	struct proc_dir_entry *twl_proc_dir_entry = NULL;
+
+	twl_proc_dir = proc_mkdir(TWL_PROC_DIRNAME, NULL);
+	if (twl_proc_dir == NULL) {
+		return;
+	}
+
+	twl_proc_dir_entry = create_proc_entry(TWL_STARTCOND_PROCNAME, S_IRUGO, twl_proc_dir);
+	if (twl_proc_dir_entry != NULL) {
+		twl_proc_dir_entry->data = NULL;
+		twl_proc_dir_entry->read_proc = proc_startcond_read;
+		twl_proc_dir_entry->write_proc = NULL;
+	}
+
+	twl_proc_dir_entry = create_proc_entry(TWL_LAST_TURNOFF_PROCNAME, S_IRUGO, twl_proc_dir);
+	if (twl_proc_dir_entry != NULL) {
+		twl_proc_dir_entry->data = NULL;
+		twl_proc_dir_entry->read_proc = proc_turnoff_sts_read;
+		twl_proc_dir_entry->write_proc = NULL;
+	}
+}
+
+
+/*----------------------------------------------------------------------*/
+
 int twl4030_init_irq(int irq_num, unsigned irq_base, unsigned irq_end);
 int twl4030_exit_irq(void);
 int twl4030_init_chip_irq(const char *chip);
@@ -1377,6 +1476,9 @@ twl_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		twl_i2c_read_u8(TWL_MODULE_USB, &temp, USB_PRODUCT_ID_LSB);
 		if (temp == 0x32)
 			features |= TWL6032_SUBCLASS;
+
+		/* Create proc files */
+		create_twl_proc_files();
 	}
 
 	status = add_children(pdata, features);
