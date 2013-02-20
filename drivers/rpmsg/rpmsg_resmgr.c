@@ -31,6 +31,7 @@
 #include <linux/debugfs.h>
 #include <linux/rpmsg_resmgr.h>
 #include <linux/pm_runtime.h>
+#include <linux/cpufreq.h>
 #include <linux/trapz.h>
 #include <plat/dmtimer.h>
 #include <plat/rpres.h>
@@ -558,6 +559,17 @@ int _set_constraints(struct rprm_elem *e, struct rprm_constraints_data *c)
 		TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmConstraintFrequency,
 				 "Type %d Frequency %d", e->type, c->frequency);
 
+		if (e->type == RPRM_IVAHD) {
+			/*
+			 * Use IVAHD frequency as a secondary hint for cpufreq governor.
+			 * When video is paused the IVAHD should be clock gated.
+			 */
+			if (c->frequency)
+				send_video_hint(1);
+			else
+				send_video_hint(0);
+		}
+
 		ret = _set_constraints_func(e, RPRM_SCALE, c->frequency);
 		if (ret)
 			goto err;
@@ -761,6 +773,15 @@ static int rprm_resource_free(struct rprm *rprm, u32 addr, int res_id)
 	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmResourceFree,
 			 "Type %d addr %d", e->type, addr);
 
+	if (e->type == RPRM_IVAHD) {
+		/*
+		 * Hint cpufreq governor that we have finished decoding
+		 * video. (In fact IVAHD is also in use when we are encoding
+		 * but that is OK.)
+		 */
+		send_video_hint(0);
+	}
+
 	idr_remove(&rprm->id_list, res_id);
 	list_del(&e->next);
 out:
@@ -862,6 +883,14 @@ static int rprm_resource_alloc(struct rprm *rprm, u32 addr, int *res_id,
 		       "rpmsg resource manager: Allocate a new resource");
 	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmResourceAlloc,
 			 "Type %d addr %d", type, addr);
+
+	if (e->type == RPRM_IVAHD) {
+		/*
+		 * Hint cpufreq governor that we have begun decoding video. (In
+		 * fact IVAHD is also in use when we are encoding but that is OK.)
+		 */
+		send_video_hint(1);
+	}
 
 	e->type = type;
 	e->src = addr;
