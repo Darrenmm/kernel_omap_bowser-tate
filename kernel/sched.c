@@ -84,6 +84,8 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 
+#include <linux/trapz.h>
+
 /*
  * Convert user-nice values [ -20 ... 0 ... 19 ]
  * to static priority [ MAX_RT_PRIO..MAX_PRIO-1 ],
@@ -3173,6 +3175,8 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	       struct task_struct *next)
 {
 	struct mm_struct *mm, *oldmm;
+
+	TRAPZ_LOG(TRAPZ_LOG_VERBOSE, 0, TRAPZ_KERN_SCHED, CtxSw, prev->pid, next->pid);
 
 	prepare_task_switch(rq, prev, next);
 

@@ -31,6 +31,7 @@
 #include <linux/debugfs.h>
 #include <linux/rpmsg_resmgr.h>
 #include <linux/pm_runtime.h>
+#include <linux/trapz.h>
 #include <plat/dmtimer.h>
 #include <plat/rpres.h>
 #include <plat/clock.h>
@@ -552,6 +553,11 @@ int _set_constraints(struct rprm_elem *e, struct rprm_constraints_data *c)
 	}
 
 	if (c->mask & RPRM_SCALE) {
+		TRAPZ_DESCRIBE(TRAPZ_KERN_RPMSG, RprmConstraintFrequency,
+			       "rpmsg resource manager: Set frequency constraint for resource");
+		TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmConstraintFrequency,
+				 "Type %d Frequency %d", e->type, c->frequency);
+
 		ret = _set_constraints_func(e, RPRM_SCALE, c->frequency);
 		if (ret)
 			goto err;
@@ -560,6 +566,11 @@ int _set_constraints(struct rprm_elem *e, struct rprm_constraints_data *c)
 	}
 
 	if (c->mask & RPRM_LATENCY) {
+		TRAPZ_DESCRIBE(TRAPZ_KERN_RPMSG, RprmConstraintLatency,
+			       "rpmsg resource manager: Set latency constraint for resource");
+		TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmConstraintLatency,
+				 "Type %d Latency %d", e->type, c->latency);
+
 		ret = _set_constraints_func(e, RPRM_LATENCY, c->latency);
 		if (ret)
 			goto err;
@@ -568,6 +579,11 @@ int _set_constraints(struct rprm_elem *e, struct rprm_constraints_data *c)
 	}
 
 	if (c->mask & RPRM_BANDWIDTH) {
+		TRAPZ_DESCRIBE(TRAPZ_KERN_RPMSG, RprmConstraintBandwidth,
+			       "rpmsg resource manager: Set bandwidth constraint for resource");
+		TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmConstraintBandwidth,
+				 "Type %d Bandwidth %d", e->type, c->bandwidth);
+
 		ret = _set_constraints_func(e, RPRM_BANDWIDTH, c->bandwidth);
 		if (ret)
 			goto err;
@@ -739,6 +755,12 @@ static int rprm_resource_free(struct rprm *rprm, u32 addr, int res_id)
 		ret = -ENOENT;
 		goto out;
 	}
+
+	TRAPZ_DESCRIBE(TRAPZ_KERN_RPMSG, RprmResourceFree,
+		       "rpmsg resource manager: Free a resource");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmResourceFree,
+			 "Type %d addr %d", e->type, addr);
+
 	idr_remove(&rprm->id_list, res_id);
 	list_del(&e->next);
 out:
@@ -835,6 +857,11 @@ static int rprm_resource_alloc(struct rprm *rprm, u32 addr, int *res_id,
 	ret = idr_get_new(&rprm->id_list, e, res_id);
 	if (ret)
 		goto err;
+
+	TRAPZ_DESCRIBE(TRAPZ_KERN_RPMSG, RprmResourceAlloc,
+		       "rpmsg resource manager: Allocate a new resource");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmResourceAlloc,
+			 "Type %d addr %d", type, addr);
 
 	e->type = type;
 	e->src = addr;

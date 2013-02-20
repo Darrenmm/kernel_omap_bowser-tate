@@ -42,6 +42,7 @@
 #include <plat/mmc.h>
 #include <plat/cpu.h>
 #include <plat/omap-pm.h>
+#include <linux/trapz.h>
 
 /* OMAP HSMMC Host Controller Registers */
 #define OMAP_HSMMC_SYSCONFIG	0x0010
@@ -890,6 +891,11 @@ omap_hsmmc_start_command(struct omap_hsmmc_host *host, struct mmc_command *cmd,
 {
 	int cmdreg = 0, resptype = 0, cmdtype = 0;
 
+	TRAPZ_DESCRIBE(TRAPZ_KERN_MMC, omap_hsmmc_start_command,
+		       "MMC start device command");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_MMC,
+			 omap_hsmmc_start_command,
+			 "CMD%d; argument=0x%08x", cmd->opcode, cmd->arg);
 	dev_dbg(mmc_dev(host->mmc), "%s: CMD%d, argument 0x%08x\n",
 		mmc_hostname(host->mmc), cmd->opcode, cmd->arg);
 	host->cmd = cmd;
@@ -1173,6 +1179,11 @@ static void omap_hsmmc_do_irq(struct omap_hsmmc_host *host, int status)
 
 	data = host->data;
 	dev_dbg(mmc_dev(host->mmc), "IRQ Status is %x\n", status);
+	TRAPZ_DESCRIBE(TRAPZ_KERN_MMC, omap_hsmmc_do_irq,
+		       "MMC interrupt");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_MMC,
+			 omap_hsmmc_do_irq,
+			 "Status %x", status, 0);
 
 	if (status & ERR) {
 #ifdef CONFIG_MMC_DEBUG
@@ -1621,6 +1632,13 @@ static int mmc_populate_adma_desc_table(struct omap_hsmmc_host *host,
 	dev_dbg(mmc_dev(host->mmc),
 		"ADMA table has %d entries from %d sglist\n",
 		i + j, host->dma_len);
+
+	TRAPZ_DESCRIBE(TRAPZ_KERN_MMC,  mmc_populate_adma_desc_table,
+		       "MMC Descriptor table populated");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_MMC,
+			 mmc_populate_adma_desc_table,
+			 "ADMA table has %d entries from %d sglist\n",
+			 i + j, host->dma_len);
 	return numblocks;
 }
 
