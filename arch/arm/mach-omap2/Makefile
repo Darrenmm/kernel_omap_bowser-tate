@@ -277,6 +277,7 @@ obj-$(CONFIG_MACH_OMAP_4430SDP)		+= board-4430sdp.o \
 					   hsmmc.o \
 					   omap_phy_internal.o \
 					   omap4_apps_brd_id.o
+obj-$(CONFIG_TOUCHSCREEN_CYPRESS_TTSP)  += board-touch-cyttsp4_core.o
 obj-$(CONFIG_MACH_OMAP_BLAZE)		+= board-44xx-tablet.o \
 					   board-44xx-identity.o \
 					   board-44xx-tablet-touch.o \
