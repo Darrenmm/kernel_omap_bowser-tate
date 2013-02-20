@@ -6,6 +6,7 @@
 #include <video/dsscomp.h>
 #include <plat/dsscomp.h>
 #include "dsscomp.h"
+#include <linux/trapz.h>
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
@@ -93,6 +94,9 @@ static void dsscomp_gralloc_cb(void *data, int status)
 	}
 	mutex_unlock(&mtx);
 
+	TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssCompGrallocCallback, "dsscomp_gralloc_cb: DSS gralloc callback function");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_VERBOSE, TRAPZ_CAT_KERNEL, TRAPZ_KERN_DISP_DSS, DssCompGrallocCallback, "gralloc addr %d status %d", gsync, status);
+
 	/* call back for completed composition with mutex unlocked */
 	list_for_each_entry_safe(gsync, gsync_, &done, q) {
 		if (debug & DEBUG_GRALLOC_PHASES)
@@ -166,6 +170,9 @@ int dsscomp_gralloc_queue(struct dsscomp_setup_dispc_data *d,
 	int skip;
 	struct dsscomp_gralloc_t *gsync;
 	struct dss2_rect_t win = { .w = 0 };
+           
+        TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssCompGrallocQueue, "dsscomp_gralloc_queue: DSSComp queuing flip. Sets up the display / manager / registers the callback and spawns a workqueue");
+        TRAPZ_LOG_BEGIN(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DssCompGrallocQueue);
 
 	/* reserve tiler areas if not already done so */
 	dsscomp_gralloc_init(cdev);
@@ -196,6 +203,9 @@ int dsscomp_gralloc_queue(struct dsscomp_setup_dispc_data *d,
 	skip = blanked;
 	if (skip && (debug & DEBUG_PHASES))
 		dev_info(DEV(cdev), "[%p,%08x] ignored\n", gsync, d->sync_id);
+
+    TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssCompGrallocQueueLogAddr, "dsscomp_gralloc_queue: print syncids");
+    TRAPZ_LOG_PRINTF(TRAPZ_LOG_VERBOSE, TRAPZ_CAT_KERNEL, TRAPZ_KERN_DISP_DSS, DssCompGrallocQueueLogAddr, "syncid %d gralloc addr %d", d->sync_id, (int) gsync);
 
 	/* mark blank frame by NULL tiler pa pointer */
 	if (!skip && pas == NULL)
@@ -435,6 +445,8 @@ skip_comp:
 	dsscomp_gralloc_cb(gsync, DSS_COMPLETION_RELEASED);
 
 	mutex_unlock(&local_mtx);
+
+        TRAPZ_LOG_END(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DSSCompGrallocQueue);
 
 	return r;
 }
