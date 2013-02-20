@@ -1384,6 +1384,7 @@ twl_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	struct twl4030_platform_data	*pdata = client->dev.platform_data;
 	u8 temp;
 	int ret = 0, features;
+	u8 twl_reg;
 
 	if (!pdata) {
 		dev_dbg(&client->dev, "no platform data?\n");
@@ -1480,6 +1481,41 @@ twl_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		twl_i2c_read_u8(TWL_MODULE_USB, &temp, USB_PRODUCT_ID_LSB);
 		if (temp == 0x32)
 			features |= TWL6032_SUBCLASS;
+
+		/* Print some useful registers at boot up */
+		pr_info("TWL603x Boot Information:\n");
+		twl_i2c_read_u8(TWL6030_MODULE_ID0, &twl_reg, PHOENIX_START_CONDITION);
+		memset(twl_start_condition, 0 , TWL_BOOT_INFO_SIZE);
+		for (i = 0; i < ARRAY_SIZE(start_cond_flags); i++)
+			if (twl_reg & start_cond_flags[i].mask)
+				strlcat(twl_start_condition, start_cond_flags[i].str,
+					sizeof(twl_start_condition));
+		pr_info("Start condition is %s (PHOENIX_START_CONDITION = 0x%02x)\n", twl_start_condition, twl_reg);
+
+		/* Clear register for next boot */
+		twl_reg = 0x7F; // Bit 8 is reserved
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, twl_reg, PHOENIX_STS_HW_CONDITIONS);
+
+		twl_i2c_read_u8(TWL6030_MODULE_ID0, &twl_reg, PHOENIX_LAST_TURNOFF_STS);
+		memset(twl_turnoff_reason, 0 , TWL_BOOT_INFO_SIZE);
+
+		if (0x01 == twl_reg) {
+			/* Upon normal shutdown with power button, this register will be set to 0x1 */
+			snprintf(twl_turnoff_reason,  TWL_BOOT_INFO_SIZE, "normal shutdown");			
+		}
+		else {
+			for (i = 0; i < ARRAY_SIZE(last_turnoff_flags); i++)
+				if (twl_reg & last_turnoff_flags[i].mask)
+					strlcat(twl_turnoff_reason, last_turnoff_flags[i].str,
+						sizeof(twl_turnoff_reason));
+		}
+		pr_info("Last turn off status is %s (PHOENIX_LAST_TURN_OFF_STATUS = 0x%02x)\n", twl_turnoff_reason, twl_reg);
+		/* Clear register for next boot */
+		twl_reg = 0xFE; // Bit 0 is read-only
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, twl_reg, PHOENIX_LAST_TURNOFF_STS);
+
+		twl_i2c_read_u8(TWL6030_MODULE_ID0, &twl_reg, PHOENIX_STS_HW_CONDITIONS);
+		printk(KERN_INFO "Hardware Conditions (PHOENIX_STS_HW_CONDITIONS) is 0x%02x\n", twl_reg);
 
 		/* Create proc files */
 		create_twl_proc_files();
